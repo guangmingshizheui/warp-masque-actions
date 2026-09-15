@@ -1,11 +1,11 @@
 # WARP MASQUE 配置生成器
 
-一键生成 Cloudflare WARP 的 mihomo 配置，41 个节点，跑在 GitHub Actions 上。
+一键生成 Cloudflare WARP 的 mihomo 配置，57 个节点，跑在 GitHub Actions 上。
 不用自己装环境，不用服务器。
 
 仓库里有两条流水线：
 
-- **生成 WARP MASQUE 配置** — 纯 WARP，41 个节点。下面讲的就是这条。
+- **生成 WARP MASQUE 配置** — 纯 WARP，57 个节点。下面讲的就是这条。
 - **Opera over MASQUE（套娃）** — 在 WARP 外面再叠一层 Opera VPN 落地，
   换个出口国家。见文末[套娃那条](#套娃opera-vpn-叠在-warp-上)。
 
@@ -37,7 +37,7 @@ Fork 过来的仓库默认不开 Actions，会看到一个提示，点
 
 解压出来三个文件：
 
-- `warp-masque.yaml` —— mihomo 配置，41 个节点，直接导入 Clash Verge / ClashMi 这类客户端
+- `warp-masque.yaml` —— mihomo 配置，57 个节点，直接导入 Clash Verge / ClashMi 这类客户端
 - `warp-masque-shadowrocket.txt` —— Shadowrocket 用的 `masque://` 链接，一行一个，挑一条复制进去
 - `usque-config.json` —— 原始密钥，想自己折腾别的客户端时用得上
 
@@ -85,11 +85,11 @@ Surge、Quantumult X、Karing 不是 mihomo 内核，也不认 masque，导进�
 
 ## 关于节点
 
-41 个节点是同一个 WARP 账号的不同接入地址，**出口 IP 是一样的**。
+57 个节点是同一个 WARP 账号的不同接入地址，**出口 IP 是一样的**。
 多节点是为了某个地址被墙时能自动换一个，不是多国家落地。
 想选国家得用 WARP+ 或 ZeroTrust，这个仓库不支持。
 
-里面有 20 个 IPv6 节点，你没 IPv6 的话它们会连不上，但客户端会自动跳过，
+里面有 28 个 IPv6 节点，你没 IPv6 的话它们会连不上，但客户端会自动跳过，
 不影响用。
 
 ## 几个提醒
@@ -139,7 +139,7 @@ uses: actions/upload-artifact@v6
 
 ### 为什么节点延迟不一样，但测速结果都差不多
 
-41 个节点是同一个 WARP 账号的不同接入地址，**出口 IP 是同一个**。
+57 个节点是同一个 WARP 账号的不同接入地址，**出口 IP 是同一个**。
 延迟差异来自你到接入点的网络路径，真正落地的还是那台 Cloudflare 机器。
 
 所以挑延迟最低的用就行，不用一个个试速度。
@@ -209,7 +209,7 @@ Opera 的地址整个封在 QUIC 隧道里。抓包对比过，直连能看到 O
 
 ### 全组合
 
-41 个 MASQUE 接入点和每个 Opera 落地都配一遍。落地通常 9 到 11 个，
+57 个 MASQUE 接入点和每个 Opera 落地都配一遍。落地通常 9 到 11 个，
 最终 400 上下的节点。
 
 这么做是为了任一环失效都还有路走：某个接入点被墙了换个端口或换个段，
@@ -255,42 +255,47 @@ Shadowrocket、Stash 不认 `dialer-proxy`，用不了套娃配置——
 Actions 那条要手动点一下才跑。如果想要它自己更新、随时有个 URL 能拿到最新配置，
 用 `worker/` 这份。
 
-Worker 每 4 小时自己重新拿一次 Opera 凭据、重建配置存进 KV。
-WARP 的注册信息也存 KV 里复用，不会每次都注册新设备。
+一份聚合订阅，导进去有两类线路可切：
 
-还有个状态页，能看到节点数、上次更新时间、下次更新时间，
-也能手动点刷新。
+- **亚洲 / 欧洲 / 美洲线路** — 走 MASQUE 再落 Opera，能换出口国家，多一跳会慢些
+- **WARP直连** — 只走 MASQUE，出口是 Cloudflare 自己的 IP，快但选不了国家
+- **Proton线路** — 配了 Proton 之后出现，下面按国家分组，可以直接选日本、新加坡等
+- **Windscribe线路** — 13 个地区，按地区分组。亚洲只有香港，但 Opera 那三个大区里没有
+
+套娃线路超时或某个落地挂了，切 WARP直连 顶上。这两类共用同一批 MASQUE
+接入点，直连组本来就在配置里（做 dialer-proxy 的目标），顺手暴露出来而已。
+
+不用定时任务。Opera 凭据 4 小时到期，Worker 在订阅被访问时才检查：
+没过期直接给缓存，过期了才重新注册。没人用就不动，不浪费。
+
+WARP 的注册信息存 KV 里复用，不会每次都注册新设备。
+
+密码和订阅路径都在界面上设，所以部署只需要绑一个 KV，
+不用配环境变量，也不用加 cron。
 
 ### 部署方式一：网页（不用装任何东西）
 
-全程在 Cloudflare 后台点，适合不想碰命令行的情况。
+全程在 Cloudflare 后台点，四步。
 
 **1. 建 KV**
 
 Cloudflare 后台 → 左边 `存储和数据库` → `KV` → `创建实例`。
-名字随便填，比如 `opera-masque`。建好放着，等下要绑。
+名字随便填，比如 `opera-masque`。
 
 > 找不到入口的话，`Workers 和 Pages` 里也能进 KV。菜单名各语言版本略有差异，
 > 认准 "KV" 这两个字母。
 
-**2. 建 Worker**
+**2. 建 Worker 并贴代码**
 
-左边 `Compute (Workers)` → `Workers 和 Pages` → `创建` → `从 Hello World! 开始` →
-起个名 → `部署`。
+左边 `Compute (Workers)` → `创建` → `从 Hello World! 开始` → 起个名 → `部署`。
 
-先部署一个空壳，下一步再填代码。
+先部署一个空壳，然后点右上角 `编辑代码`，把
+[`worker/dist/worker.js`](worker/dist/worker.js) 整个文件的内容复制进去，
+覆盖掉原来的 `Hello World`。这是打包好的单文件，全选粘贴就行。
 
-**3. 贴代码**
+粘完点 `部署`。
 
-进这个 Worker → 右上角 `编辑代码`。
-
-把 [`worker/dist/worker.js`](worker/dist/worker.js) 整个文件的内容复制过去，
-覆盖掉编辑器里原来的 `Hello World`。这是打包好的单文件，1100 多行，
-全选粘贴就行。
-
-粘完点右上角 `部署`。
-
-**4. 绑 KV**
+**3. 绑 KV**
 
 回到 Worker 页面 → `设置` → `绑定` → `添加` → 选 `KV 命名空间`。
 
@@ -299,47 +304,16 @@ Cloudflare 后台 → 左边 `存储和数据库` → `KV` → `创建实例`。
 
 点 `部署`。
 
-**5. 设密码**
-
-还在 `设置` 页 → `变量和机密` → `添加` →
-
-- 类型选 **`机密 (Secret)`**
-- 变量名 **`PASSWORD`**
-- 值填你要设的密码
-
-点 `部署`。
-
-> 类型一定要选 `Secret` 不是 `文本`。选文本的话密码会在后台明文显示。
-
-**6. 改订阅路径（可选，但建议改）**
-
-同样在 `变量和机密` → `添加` →
-
-- 类型选 **`文本 (Text)`**
-- 变量名 **`SUB_PATH`**
-- 值填一串难猜的，比如 `a8f3d91c2b`
-
-不设的话默认是 `sub`。
-
-**7. 加定时更新**
-
-`设置` → `触发器` → `Cron 触发器` → `添加` → 选 `按计划` →
-表达式填：
-
-```
-0 */4 * * *
-```
-
-这就是每 4 小时跑一次。
-
-**8. 打开用**
+**4. 打开设密码**
 
 访问 `https://你的worker名.你的子域.workers.dev`，
-输第 5 步设的密码，进去就能看到订阅地址，复制走填进客户端。
+第一次打开会让你设管理密码，设完直接进管理页。
 
-第一次打开订阅可能要等十几秒，它在现注册 WARP 和 Opera。
+订阅地址、改路径、改密码都在这个页面上。
 
----
+第一次点订阅可能要等十几秒，它在现注册 WARP 和 Opera。
+
+> 没绑 KV 就打开的话，页面会告诉你怎么绑，不会报一堆栈。
 
 ### 部署方式二：命令行
 
@@ -351,22 +325,11 @@ npx wrangler login
 # 建 KV，把输出的 id 填进 wrangler.toml
 npx wrangler kv namespace create KV
 
-# 设密码。不设的话 Worker 会直接返回 500 拒绝服务，防止裸奔上线
-npx wrangler secret put PASSWORD
-
 npx wrangler deploy
 ```
 
-部署完访问 `https://你的worker.workers.dev/`，输密码进去就能看到订阅地址。
-
-订阅路径在 `wrangler.toml` 里改：
-
-```toml
-[vars]
-SUB_PATH = "a8f3d91c2b"
-```
-
-改完重新 deploy，订阅地址就变成 `https://你的域名/a8f3d91c2b?token=...`。
+部署完访问 `https://你的worker.workers.dev/` 设密码。
+订阅路径也在界面上改，不用动配置文件。
 
 ### 改了代码想重新打包
 
@@ -381,33 +344,49 @@ npm run build
 状态页和所有 API 都要密码。客户端拉订阅时带不了 cookie，所以订阅链接里
 挂了个签名 token——状态页上显示的那条完整链接直接复制走就行。
 
-- 密码只存在 Cloudflare 的 secret 里，不落配置文件
+- 密码只存 PBKDF2 哈希 + 随机盐，KV 里看不到明文
 - 会话是 HMAC 签名的 token，cookie 里没有密码本身
 - 密码比对走常数时间，不会从响应时间里泄露
 - 同一 IP 连续失败 8 次锁 15 分钟
 - 订阅路径不对或 token 无效，一律返回 404，不提示"密码错误"这类可枚举信息
-- 想让所有旧链接失效，改一次密码就够了（token 是用密码签的）
+- 想让所有旧链接失效，在界面上改一次密码就够了（token 是用密码哈希签的）
 
 ### 路由
 
 | 路径 | 说明 |
 |---|---|
-| `/` | 状态页，要密码 |
-| `/login` | POST，登录 |
-| `/logout` | 退出 |
-| `SUB_PATH` | 订阅，要 `?token=` |
-| `/api/state` | JSON 状态，要登录 |
+| `/` | 首次是设密码页，之后是登录/管理页 |
+| `/login` `/logout` | 登录、退出 |
+| 你设的订阅路径 | 默认 `/sub`，要 `?token=` |
+| `/api/setup` | POST，首次设密码 |
+| `/api/password` | POST，改密码 |
+| `/api/sub-path` | POST，改订阅路径 |
 | `/api/refresh` | POST，重新拿 Opera 凭据 |
 | `/api/reset-warp` | POST，重注册 WARP 设备 |
 
-订阅响应带了 `profile-update-interval: 4`，支持这个头的客户端会自己每 4 小时拉一次。
+订阅响应带了 `profile-update-interval: 4`，支持这个头的客户端会自己每 4 小时拉一次，
+正好卡在凭据到期点上。
+
+### 更新是怎么触发的
+
+没有 cron。订阅每次被访问时，Worker 看一眼 `expiresAt`：
+
+- 还没到期 → 直接给缓存，不碰任何 API
+- 到期了 → 重新注册 Opera，重建配置
+
+多个客户端同时拉订阅时会加锁，只有一个真去注册，其他的先用旧配置顶着，
+免得并发注册一堆账号触发风控。
+
+4 小时这个数来自 opera-proxy 自己的 `-refresh 4h` 默认值。
+SurfEasy 的 API 不返回真实过期时间，所以按这个走，另外留了 10 分钟余量。
 
 ### Worker 常见问题
 
-**打开显示"未设置 PASSWORD"** — 第 5 步没做，或者变量名拼错了。
-必须是全大写 `PASSWORD`。
+**打开显示 KV Not Bound** — 第 3 步没做，或者绑定的变量名不是 `KV`。
+必须是这两个字母大写。
 
-**报 KV 相关的错** — 第 4 步绑定的变量名不是 `KV`。必须是这两个字母大写。
+**忘了密码** — 没有找回。去 KV 里把 `auth:cred` 这条删掉，
+刷新页面就回到设密码那步。别的数据不受影响。
 
 **订阅链接打开是 404** — token 过期了（7 天），回状态页重新复制一条。
 改过密码的话所有旧链接都会失效，这是故意的。
@@ -416,14 +395,110 @@ npm run build
 
 **导入客户端报错说不认识 masque** — 内核不是 mihomo Alpha。见下面那节。
 
+**客户端不认 dialer-proxy** — Shadowrocket、Stash 这类只支持 masque
+不支持链式出站，导进去只有 WARP直连 那组能用，套娃线路会报错。
+
+### Proton 落地（可选）
+
+Opera 只有三个大区，想要更多国家可以再挂一层 Proton。免费版 10 个国家：
+加拿大、瑞士、日本、墨西哥、荷兰、挪威、波兰、罗马尼亚、新加坡、美国。
+
+链路和 Opera 那条一样：`本机 → MASQUE → Proton WireGuard → 目标`。
+
+**为什么要多绕一圈流水线**
+
+Proton 必须账号登录，走的是 SRP 协议。这套在 Worker 里能算对（我验过 A 和 M1
+跟官方库逐字节一致），但提交时会被 Proton 的风控拦掉，非官方客户端指纹过不去。
+
+所以让 GitHub Actions 去登录、拿证书，再把结果推给 Worker。
+Worker 完全不碰 Proton 账号。
+
+**配置步骤**
+
+1. 注册一个 Proton 账号（免费版就行）
+2. 仓库 Settings → Secrets → 加 `PROTON_USER`（邮箱）和 `PROTON_PASS`（密码）
+3. Worker 管理页的「Proton 落地」区块，点`生成`拿到推送地址
+4. 把那个地址加成第三个 secret：`WORKER_PUSH_URL`
+5. 跑一次 `取 Proton 凭据` 流水线
+
+之后每 3 天自动续，不用再管。
+
+**关于证书有效期**
+
+Proton 的证书最长 7 天，`Duration` 写再长也封顶（实测 43200 min、525600 min
+返回的都是 7 天）。所以流水线每 3 天跑一次，留足余量。
+
+**推送地址的安全性**
+
+令牌在地址里，只能写 Proton 凭据，动不了管理页也拿不到订阅。
+泄露了在管理页点「换一个」，旧地址立刻失效。
+
+不配这部分也不影响，其他线路照常工作。
+
+### Windscribe 落地（可选）
+
+Windscribe 的浏览器扩展用的是标准 HTTPS 代理，和 Opera 同一个形态，
+所以能直接写成静态节点挂在 MASQUE 后面。
+
+注册不需要邮箱，`POST /Users` 给个随机用户名密码就返回 session。
+免费额度**每月 2GB**（官网说的 10GB 要验证邮箱，匿名号拿不到）。
+
+**为什么开户要走流水线**
+
+它的认证只有一行 `md5(固定secret + 时间戳)`，本来在 Worker 里就能跑完。
+但**开户和出口 IP 强相关**：一个 IP 开过号之后再开，拿到的是
+`status=2` 的降额账号（`traffic_max` 只有 1MB），而这种账号连
+`/ServerCredentials` 都取不到：
+
+```
+400  errorCode 1700
+     "User unable to generate credentials. status = 2"
+```
+
+也就是说降额号完全不可用，不是"额度小一点"的问题。
+
+Cloudflare Worker 的出口 IP 是整个平台共享的，早被别人拿去开过号，
+所以 Worker 里开不出能用的账号。开户放到 GitHub Actions 上做，
+runner 的 IP 干净。
+
+13 个地区，62 台落地：
+
+```
+美国东部/中部/西部  加拿大东部/西部  英国  法国  德国  荷兰
+挪威  瑞士  罗马尼亚  香港
+```
+
+落地是机房 IP，M247 为主。
+
+**配置步骤**
+
+和 Proton 共用同一个推送地址，不用再加 secret：
+
+1. 管理页「Proton 落地」那里生成推送地址，配进 `WORKER_PUSH_URL`
+2. 跑一次 `取 Windscribe 账号` 流水线
+
+流水线会自己在地址末尾加 `/wind`。它开完号会先验一次能不能取到代理凭据，
+拿到降额号就直接失败退出，不会把不能用的号推给 Worker。
+
+**流量用完了怎么办**
+
+管理页「Windscribe 落地」区块能看到本月用了多少。用完重跑一次流水线换个号。
+
+偶尔会碰上 runner 的 IP 被别人用过，这时流水线会报
+`拿到的是降额账号 status=2`，重跑一次换台机器就行。
+
+流水线也配了每月 1 号自动跑一次，对上 Windscribe 的月度重置。
+
 ### 跑测试
 
 ```bash
 cd worker && npm test
 ```
 
-33 项，覆盖常数时间比较、token 伪造/篡改/过期、登录限速，
-以及路由层的鉴权（未登录一律 404、订阅 token 校验、cookie 安全属性）。
+99 项，覆盖常数时间比较、token 伪造/篡改/过期、登录限速、并发初始化，
+Proton 凭据推送（令牌校验、坏数据、过期拒绝、换令牌失效），
+配置结构（分组完整性、无悬空引用、直连组成员正确），
+以及路由层的鉴权（未登录一律 404、订阅 token 校验、按需重建、cookie 安全属性）。
 
 ### 两个坑
 
